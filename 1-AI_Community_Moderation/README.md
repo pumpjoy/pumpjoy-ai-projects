@@ -2,7 +2,7 @@
 
 ## 1. Executive Summary: AI for Scalable Moderation
 
-The project successfully developed a scalable solution for automated content moderation based on complex community guidelines. By employing Transfer Learning and a specialized prompting strategy, we built a robust model capable of classifying multiple violation types.
+The project successfully developed a scalable solution for automated content moderation based on complex community guidelines. By employing Transfer Learning and a specialized prompting strategy, a robust model is built, capable of classifying multiple violation types.
 
 |Metric|Result|Interpretation|
 |---|---|---|
@@ -65,5 +65,6 @@ The final, saved RoBERTa model is ready to be loaded onto a server (e.g., using 
 1. **Hybrid Modeling for Spam:** The most urgent task is to address the FN vulnerability. This requires implementing a **hybrid ensemble model** where a simple model (e.g., Logistic Regression) detects spam based _only_ on the new URL presence feature, and the RoBERTa model handles the complex semantic rules.
 
 2. **Adversarial Fine-Tuning:** Systematically collect the observed **False Positive** samples (ambiguous legal advice) and incorporate them into the training set to make the model more robust against common human language nuances.
+
 
 3. **Human-in-the-Loop (HITL) System:** Implement a feedback mechanism where human-corrected labels for samples within the uncertainty margin (e.g., 0.4 to 0.6 confidence) are fed back into the training data for continuous model improvement.
