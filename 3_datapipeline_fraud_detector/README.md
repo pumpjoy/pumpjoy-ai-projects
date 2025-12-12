@@ -6,3 +6,6 @@ Uses the following stack:
 4. AI/ML Model | Simple classifier focussing on deployment/serving.
 5. Monitor/Dashboard - Prometheus & Grafana | Collect metrics (latency, throughput) and visualize pipeline.
 6. Containerization - Docker | Bundles the services 
+
+
+This project is built with the help of Gemini-2.5 Flash-Lite, as an effort to study the stack of Apache/Spark and Apache/Kafka.

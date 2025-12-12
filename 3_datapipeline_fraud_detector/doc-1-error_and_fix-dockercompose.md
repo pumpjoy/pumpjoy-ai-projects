@@ -60,7 +60,18 @@ KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
 ## Run 
 - Run Kafka's producer (in this project is app/transaction_producer.py) which simulates receiving data.
 - Run the consumer in terminal, 
-`docker exec -it spark-master /opt/spark/bin/spark-submit \
+```
+docker exec -it spark-master /opt/spark/bin/spark-submit \
     --conf "spark.driver.extraJavaOptions=-Divy.cache.dir=/tmp -Divy.home=/tmp" \
     --packages org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.7 \
-    /app/spark_stream_processor.py`
+    /app/spark_stream_processor.py
+```
+
+```
+docker exec -it spark-master /opt/spark/bin/spark-submit \
+    --conf "spark.driver.extraJavaOptions=-Divy.cache.dir=/tmp -Divy.home=/tmp" \
+    --packages org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.7 \
+    --archives /opt/venv.tar.gz#venv \
+    --conf spark.executorEnv.PYSPARK_PYTHON="./venv/bin/python" \
+    /app/spark_stream_processor.py
+```

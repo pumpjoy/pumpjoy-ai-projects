@@ -34,7 +34,11 @@ services:
     
     # --- Spark Worker/Master Service
   spark: 
-    image: apache/spark:3.5.7-scala2.12-java11-python3-ubuntu
+    # image: apache/spark:3.5.7-scala2.12-java11-python3-ubuntu
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: custom-spark-app:latest 
     container_name: spark-master
     # Map necessary ports if you want to access the Spark UI (http://localhost:8080)
     ports:
@@ -44,8 +48,12 @@ services:
       # Master configuration for the official image
       SPARK_MASTER_HOST: spark-master 
       SPARK_MASTER_PORT: 7077
+      
       # Tell Spark where the Kafka broker is located (INTERNAL listener)
       SPARK_KAFKA_BROKERS: broker:29092
+      # PYTHONPATH: /opt/app_libs
+      PYSPARK_PYTHON: /usr/bin/python3 
+      PYSPARK_DRIVER_PYTHON: /usr/bin/python3
     depends_on:
       - broker
     volumes:
