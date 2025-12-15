@@ -1,0 +1,7 @@
+kafka-python==2.0.2
+websocket-client==1.6.1
+Faker==19.3.0
+pyspark==3.5.0
+torch
+transformers
+pandas
