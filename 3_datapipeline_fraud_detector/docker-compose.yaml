@@ -1,3 +1,4 @@
+version: '3.7'
 services:
   # --- Kafka Broker Service ---
   broker:
@@ -38,27 +39,28 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: custom-spark-app:latest 
-    container_name: spark-master
-    # Map necessary ports if you want to access the Spark UI (http://localhost:8080)
+    image: stable-pyspark-app:latest
+    container_name: spark-master 
     ports:
-      - "8080:8080"
-      - "7077:7077"
+      - "8080:8080" # Spark UI
+      - "7077:7077" # Spark Master
+      - "8888:8888" # Jupyter Notebook port (useful for debugging)
     environment:
       # Master configuration for the official image
       SPARK_MASTER_HOST: spark-master 
       SPARK_MASTER_PORT: 7077
       
       # Tell Spark where the Kafka broker is located (INTERNAL listener)
-      SPARK_KAFKA_BROKERS: broker:29092
-      # PYTHONPATH: /opt/app_libs
-      PYSPARK_PYTHON: /usr/bin/python3 
-      PYSPARK_DRIVER_PYTHON: /usr/bin/python3
+      SPARK_KAFKA_BROKERS: broker:29092 
+
+      # Set the user for the container to match the Dockerfile user
+      NB_USER: jovyan
+      NB_UID: 1000
+
     depends_on:
       - broker
     volumes:
       # Map the local 'app' directory to '/app' inside the container
-      - ./app:/app
-    # The command to keep the Spark container running to execute spark-submit
-    command: ["/bin/bash", "-c", "/opt/spark/sbin/start-master.sh && tail -f /dev/null"]
-    
+      - ./app:/app 
+    # The new image's ENTRYPOINT handles user switching; this command sleeps.
+    command: ["start.sh", "bash", "-c", "sleep infinity"]

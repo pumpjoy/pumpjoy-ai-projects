@@ -1,250 +1,134 @@
-# BUG: No Module (numpy._core) found. Could not find solution even after changing path.
-# TODO: Switch to use jupyter/pyspark instead 
-
-# spark_steam_processor.py
-# Takes stream from Kafka topic and calculates:
-#   1. transaction count last 5 minutes.
-#   2. average amount last 10 minutes.
-# Load AI-IsolationForest Model for anomaly detection | Real-time fraud score.
-# Publish result of original transaction, features, & fraud score to new Kafka topic
-
-import pandas as pd
-import pickle
-import pyspark.sql.functions as F
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import (
-    col, 
-    from_json, 
-    to_json,
-    window, 
-    count, 
-    avg, 
-    current_timestamp, 
-    pandas_udf,
-    struct
-)
+# FIX 1: Import the functions module using the standard alias 'F'
+import pyspark.sql.functions as F
 from pyspark.sql.types import (
-    StructType, 
-    StructField, 
-    StringType, 
-    IntegerType, 
-    DoubleType, 
-    TimestampType
+    StructType, StructField, StringType, IntegerType, 
+    DoubleType, TimestampType
 )
 
-KAFKA_CONNECTOR_VERSION = "3.5.7"
+# --- CONFIGURATION ---
+KAFKA_CONNECTOR_VERSION = "3.5.0"
 KAFKA_BROKER = 'broker:29092' 
 INPUT_TOPIC_NAME = 'test_topic'
+OUTPUT_TOPIC_NAME = 'fraud_alerts'
 CHECKPOINT_LOCATION = "/tmp/checkpoint/fraud_app"
 
-MODEL_PATH = "/app/isolation_forest_model.pkl" 
-FEATURE_COLUMNS = ["amount", "txn_count_5min", "avg_amount_10min"] 
-
-OUTPUT_TOPIC_NAME = 'fraud_alerts'
-
-# Schema of the incoming JSON data from the Kafka producer
-transaction_schema = StructType([
-    StructField("id", IntegerType()),
-    StructField("user_id", StringType()),
-    StructField("amount", DoubleType()),
-    StructField("timestamp", DoubleType()),
-    StructField("message", StringType()),
-    StructField("status", StringType())
+# Schema definition (remains the same)
+input_schema = StructType([
+    StructField("user_id", IntegerType(), True),
+    StructField("transaction_id", StringType(), True),
+    StructField("amount", DoubleType(), True),
+    StructField("timestamp", StringType(), True) 
 ])
 
-# --- Initiate Spark Session ---
-# Configure Kafka package (JAR) for connectivity
+# --- 1. SPARK SESSION INITIALIZATION ---
 spark = SparkSession \
     .builder \
     .appName("RealTimeFraudPipeline") \
-    .config("spark.jars.packages", "org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.7") \
+    .config("spark.jars.packages", f"org.apache.spark:spark-sql-kafka-0-10_2.12:{KAFKA_CONNECTOR_VERSION}") \
     .config("spark.sql.streaming.checkpointLocation", CHECKPOINT_LOCATION) \
     .getOrCreate()
-
-# Only log Error messages
 spark.sparkContext.setLogLevel("ERROR")
-print(f"Starting Spark Structured Streaming job with Kafka package v{KAFKA_CONNECTOR_VERSION}...")
-print(f"Reading from broker: {KAFKA_BROKER}, topic: {INPUT_TOPIC_NAME}")
 
-# --- Define Streaming Source (Kafka) ---
-kafka_stream_df = spark \
-    .readStream \
+# --- 2. READ FROM KAFKA ---
+kafka_stream = spark.readStream \
     .format("kafka") \
     .option("kafka.bootstrap.servers", KAFKA_BROKER) \
     .option("subscribe", INPUT_TOPIC_NAME) \
-    .option("startingOffsets", "earliest") \
+    .option("startingOffsets", "latest") \
     .load()
 
-# --- Base transformations (parse and clean) ---
-# Create base df with Spark Timestamp column
-base_df = kafka_stream_df \
-    .selectExpr("CAST(value AS STRING) as json_value") \
-    .select(from_json(col("json_value"), transaction_schema).alias("data")) \
-    .select("data.*", current_timestamp().alias("processing_time")) \
-    .withColumn("event_time", col("timestamp").cast(TimestampType()))
-print("Starting Spark Structured Streaming job...")
+# --- 3. PARSE JSON AND WATERMARK ---
+parsed_stream = kafka_stream.selectExpr("CAST(value AS STRING) as json_payload") \
+    .select(F.from_json(F.col("json_payload"), input_schema).alias("data")) \
+    .select("data.*") \
+    .withColumn("event_time", F.col("timestamp").cast(TimestampType())) \
+    .withWatermark("event_time", "10 minutes")
 
-# --- Stateful Feature Engineering ---
-# Calculate the number of transactions per user (last 5 mins) and average amount (10 mins).
-
-# Apply watermark. Define a 1-minute tolerance for late data
-watermarked_df = base_df.withWatermark("event_time", "1 minute")
-
-# Calculate feature of transaction Count in the last 5 minutes
-# Group by user_id and a sliding window that ends every 1 minute
-count_features_df = watermarked_df \
+# --- 4. FEATURE ENGINEERING (Windowed Aggregation) ---
+# Calculate the number of transactions per user in a 5-minute sliding window
+user_activity = parsed_stream \
     .groupBy(
-        window(col("event_time"), "5 minutes", "1 minute").alias("count_window"), 
-        col("user_id")
+        F.window(F.col("event_time"), "10 minutes", "5 minutes"),
+        F.col("user_id")
     ) \
     .agg(
-        count(col("id")).alias("txn_count_5min")
+        F.count("transaction_id").alias("txn_count_5min"),
+        F.avg("amount").alias("avg_amount_10min")
     ) \
-    .select(
-        col("count_window.end").alias("txn_count_window_end"),
-        col("user_id"), # <-- NO ALIASING HERE
-        col("txn_count_5min")
-    )
+    .withWatermark("window", "10 minutes") \
+    .select(F.col("user_id"), F.col("txn_count_5min"), F.col("avg_amount_10min"), F.col("window"))
 
-# Calculate feature of average amount in the last 10 minutes
-# Group by user_id and a sliding window that ends every 5 minute
-avg_features_df = watermarked_df \
-    .groupBy(
-        window(col("event_time"), "10 minutes", "2 minutes").alias("avg_window"), 
-        col("user_id")
-    ) \
-    .agg(
-        avg(col("amount")).alias("avg_amount_10min")
-    ) \
-    .select(
-        col("avg_window.end").alias("avg_amount_window_end"),
-        col("user_id"),
-        col("avg_amount_10min")
-    )
-
-# --- Join features back to original stream ---
-# Prepares the data for model scoring by ensuring every original record 
-# gets the latest feature value from its respective window.
-
-# Join Original Stream with Count Feature (5 min)
-count_joined_df = base_df.alias("original") \
+# --- 5. STATEFUL JOIN ---
+# Join current transaction with the latest computed features (stateful)
+final_features_df = parsed_stream.alias("txn") \
     .join(
-        count_features_df.alias("count_features"),
-        on=[
-            F.col("original.user_id") == F.col("count_features.user_id")
-        ],
-        how="left_outer"
+        user_activity.alias("agg"),
+        # 1. User ID Match
+        (F.col("txn.user_id") == F.col("agg.user_id")) &
+        # 2. Time-Based Range Condition (Crucial for Bounded State)
+        # Match current transaction (txn.event_time) to the window end time (agg.window.end)
+        # The transaction must fall within the aggregate's 10-minute window.
+        (F.col("txn.event_time") >= F.col("agg.window.start")) &
+        (F.col("txn.event_time") <= F.col("agg.window.end")),
+        "inner"
     ) \
     .select(
-        "original.*",
-        F.col("count_features.txn_count_5min")
+        F.col("txn.*"),
+        # The aggregated columns are still available
+        F.col("agg.txn_count_5min"),
+        F.col("agg.avg_amount_10min")
     )
 
-# Join the Result (Count) with the Average Feature (10 min)
-final_features_df = count_joined_df.alias("current") \
-    .join(
-        avg_features_df.alias("avg_features"),
-        on=[
-            F.col("current.user_id") == F.col("avg_features.user_id")
-        ],
-        how="left_outer"
-    ) \
-    .select(
-        "current.*", # Contains original columns + txn_count_5min
-        F.col("avg_features.avg_amount_10min") # Add the new average feature
-    )
+# --- 6. RULES ENGINE DECISION (FINAL LOGIC) ---
+HIGH_AMOUNT_THRESHOLD = 500.0   
+HIGH_COUNT_THRESHOLD = 5 
 
-# Rename to 'scored_df' for Model Inference
-scored_df = final_features_df
-
-# --- Define Pandas UDF ---
-# Load the pre-trained Isolation Forest model
-try:
-    with open(MODEL_PATH, 'rb') as f:
-        ISOLATION_FOREST_MODEL = pickle.load(f)
-except FileNotFoundError:
-    print(f"ERROR: Model file not found at {MODEL_PATH}. Prediction will fail.")
-    ISOLATION_FOREST_MODEL = None
-
-
-# Define the Pandas UDF for real-time scoring
-# Input is a Pandas Series/DataFrame, output is a Pandas Series (Score)
-# The return type is DoubleType because the Isolation Forest decision_function returns a float score.
-@pandas_udf(DoubleType())
-def predict_fraud_score(iterator: pd.Series) -> pd.Series:
-    """
-    Applies the Isolation Forest model to batches of streaming data.
-    
-    Args:
-        iterator (DataFrame): Pandaas Series/DataFrame 
-    Return:
-        DoubleType (DataFrame): Float score
-    """
-    if ISOLATION_FOREST_MODEL is None:
-        return pd.Series([0.0] * len(iterator)) # Return safe score if model is missing
-
-    data_batch = pd.DataFrame(iterator.tolist(), columns=FEATURE_COLUMNS)
-    
-    # 1. Apply the model's decision function (Anomaly score is the inverse of the distance)
-    # The score tells us how "normal" a transaction is. Lower score = more anomalous.
-    raw_scores = ISOLATION_FOREST_MODEL.decision_function(data_batch)
-
-    # 2. Return the score as a Pandas Series
-    # Higher score = more fraudulent (for clarity)
-    return pd.Series(raw_scores * -1)
-
-# --- Apply Model Inference ---
-# Select the feature columns needed by the model and structure them for the UDF
-model_input_df = scored_df.select(
-    "*", # Keep all original columns and features
-    struct(
-        col("amount"),
-        col("txn_count_5min"),
-        col("avg_amount_10min")
-    ).alias("model_features") # Package features into a single struct column
-)
-
-# Apply the Pandas UDF to generate the final fraud score
-final_predictions_df = model_input_df.withColumn(
-    "fraud_score", 
-    predict_fraud_score(col("model_features"))
-)
-
-# Add a simple binary flag based on the score threshold (set artificial threshold of 0.05)
-final_alerts_df = final_predictions_df.withColumn(
+final_alerts_df = final_features_df.withColumn(
     "is_fraud_alert", 
-    F.when(col("fraud_score") > 0.05, True).otherwise(False)
+    F.when(
+        (F.col("amount") > HIGH_AMOUNT_THRESHOLD) |
+        (F.col("txn_count_5min").cast(IntegerType()) > HIGH_COUNT_THRESHOLD), 
+        True
+    ).otherwise(False)
+).withColumn(
+    # Provide a 'score' based on velocity for reporting/completeness
+    "fraud_score", 
+    F.col("txn_count_5min") / F.lit(10) 
 )
 
 
-# --- Define Streaming Sink (Console Output) ---
-# Select the final output columns and structure them
-# Send a clean JSON payload containing the final decision
-kafka_output_df = final_alerts_df.select(
-    # Kafka requires 'key' and 'value' columns
-    col("user_id").alias("key"), # Use user_id as the Kafka key
-    to_json(
-        struct(
-            col("event_time").cast(StringType()).alias("alert_time"),
-            col("user_id"),
-            col("amount"),
-            col("txn_count_5min"),
-            col("avg_amount_10min"),
-            col("fraud_score"),
-            col("is_fraud_alert")
+# --- 7. WRITE TO KAFKA SINK ---
+# Select and structure the final output
+output_stream = final_alerts_df.select(
+    F.to_json(
+        F.struct(
+            F.col("transaction_id"),
+            F.col("user_id"),
+            F.col("amount"),
+            F.col("is_fraud_alert"),
+            F.col("fraud_score")
         )
-    ).alias("value") # The complete payload as a JSON string
+    ).alias("value")
 )
 
-# 2. Write the stream to the new Kafka topic
-print(f"\nWriting final alerts to Kafka topic: {OUTPUT_TOPIC_NAME}")
-query = kafka_output_df \
+# output_stream = parsed_stream.select(
+#     F.to_json(
+#         F.struct(
+#             F.col("user_id"),
+#             F.col("transaction_id")
+#         )
+#     ).alias("value")
+# )
+
+# Start the streaming query
+query = output_stream \
     .writeStream \
     .format("kafka") \
     .option("kafka.bootstrap.servers", KAFKA_BROKER) \
     .option("topic", OUTPUT_TOPIC_NAME) \
-    .option("checkpointLocation", f"{CHECKPOINT_LOCATION}/kafka_sink") \
     .outputMode("append") \
     .start()
 
+print("Starting Spark Structured Streaming job...")
 query.awaitTermination()
