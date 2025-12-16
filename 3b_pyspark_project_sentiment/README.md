@@ -1,0 +1,4 @@
+Call `spark-submit` -  `spark-submit   --packages org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.0,org.postgresql:postgresql:42.7.0   --conf "spark.driver.extraJavaOptions=-Dio.netty.tryReflectionSetAccessible=true --add-opens=java.base/java.nio=ALL-UNNAMED --add-opens=java.base/sun.nio.ch=ALL-UNNAMED"   --conf "spark.executor.extraJavaOptions=-Dio.netty.tryReflectionSetAccessible=true --add-opens=java.base/java.nio=ALL-UNNAMED --add-opens=java.base/sun.nio.ch=ALL-UNNAMED"   spark_job/processor.py` 
+
+Check the PostgrSQL table- `docker exec -it 3b_pyspark_project_sentiment-postgres-1 psql -U user -d hype_db`
+Check the PostgreSQL - `SELECT * FROM realtime_hype;`
