@@ -1,7 +1,9 @@
 import re
 from urllib.parse import urlparse
 from micontants import (
-    TRUSTED_DOMAINS, TOXIC_TRIGGER_WORDS
+    TRUSTED_DOMAINS, 
+    LEET_SUBSTITUTIONS,  
+    SPAM_TRIGGER_PHRASES
 )
 
 def is_whitelist(url: str) -> bool:
@@ -17,9 +19,34 @@ def is_whitelist(url: str) -> bool:
         print("URL SAFE: Error parsing URL for Whitelisting: {e}")
         return False 
     
-def fast_profanity_check(text: str) -> bool:
-    # Removes non-alphanumerical, lowercase words
-    normalized  = re.sub(r'[^a-z\s]', ' ', text.lower())
+def check_profanity(text: str, word_list: list) -> bool:
+    """
+    Checks for profanity, including common Leet Speak substitutions, 
+    by normalizing the text before tokenization.
+    """ 
+    # Leet Speak Substitution 
+    text_processed = list(text.lower())
+    for i, char in enumerate(text_processed):
+        if char in LEET_SUBSTITUTIONS:
+            text_processed[i] = LEET_SUBSTITUTIONS[char]
+    
+    # Join back into a single string
+    text_substituted = "".join(text_processed) 
 
+    # Removes non-alphanumerical, lowercase words
+    normalized = re.sub(r'[^a-z\s]', ' ', text_substituted)
+
+    # Splits the sentence into words and check each of them
     words = set(normalized.split())
-    return bool(words.intersection(TOXIC_TRIGGER_WORDS))
+    is_toxic = bool(words.intersection(word_list))
+    return is_toxic, normalized
+
+def check_spam(text: str) -> bool: 
+    content_lower = text.lower()
+    
+    # Checks for direct intersection
+    for phrase in SPAM_TRIGGER_PHRASES:
+        if phrase in content_lower:
+            return True
+            
+    return False

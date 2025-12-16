@@ -1,3 +1,5 @@
+# TODO: Future implement log system
+
 import os
 import asyncio
 
@@ -70,10 +72,11 @@ async def on_message(message):
     # DEBUG: Says hello when detecting "hello" in chat 
     if "hello" in content: 
         print(f"User '{message.author.name}' said 'hello'. Replying...")
-         
-        await message.channel.send("hello")
+        
+        await message.channel.send("hello") 
 
-    # --- Link Detection ---
+    # --- Link Check ---
+    # External check with highest confidence
     urls = url_extractor.find_urls(message.content)
     sus_urls = [url for url in urls if not is_whitelist(url)]
     if sus_urls:
@@ -96,39 +99,80 @@ async def on_message(message):
             # DEBUG
             # await message.delete()
 
-            # Action: Send warning
+            # Action: Send warning 
             warning_message = (
                 f"YOOO WHAT THIS LINK. {message.author.mention} SUS AF! "
                 f"Deleted because it contain a confirmed **malicious link**."
                 f"(`{threats}). Stop it of you will be banned! "
-                f"Calling pumpy. <@{OWNER_ID}> "
-                # TODO: Future ping owner/admins
+                f"Calling pumpy. <@{OWNER_ID}> " # Error is caught by python itself
             )
-            await message.channel.send(warning_message)
+            await message.channel.send(content=warning_message)
+            await message.channel.send(stickers=[await message.guild.fetch_sticker(STICKER_AYONONONO)]) 
             return
+        
+    # --- Zero Tolerance Check ---
+    is_triggered, clean_text = check_profanity(content, TOXIC_ZERO_TOLERANCE_WORDS)
+    if is_triggered:
+        print(f"TOXIC ZEROTOL: Potential zero-tolerance toxicity detected by keyword.")
+        # Action: Delete message
+        # DEBUG
+        # await message.delete()
+        warning_message = (
+            f"ABSOLUTELY NO NO {message.author.mention}! "
+            f"DO NOT USE THAT WORD AGAIN OR HEAVIER CONSEQUENCE WILL HAPPEN! " 
+            f"Calling pumpy. <@{OWNER_ID}> "
+        )
+        await message.channel.send(content=warning_message)
+        await message.channel.send(stickers=[await message.guild.fetch_sticker(STICKER_AYONONONO)])
+        return
+
+
+    # --- Spam/Self-promo Check ---
+    # Quick check
+    if check_spam(content):
+        print(f"SPAM: Scam/Self-promo keyword found: '{content}'")
+
+        # Moderation action 
+        await message.channel.send(stickers=[await message.guild.fetch_sticker(STICKER_AYONONONO)]) # Error is caught by discordpy itself, it will not crash
+        # DEBUG
+        # await messsage.delete()
+        return
     
     # --- Toxic Check ---
+    # Takes the longest to process, so will put at the end
     # Using HuggingFace's detoxify mini transformer
-    if fast_profanity_check(content):
-        print(f"FASTFILTER: Potential toxicity detected by keyword.")
+    
+    is_triggered, clean_text = check_profanity(content, TOXIC_TRIGGER_WORDS)
+    if is_triggered:
+        print(f"TOXIC: Potential toxicity detected by keyword.")
 
         # Check using model
-        toxicity_scores = await check_toxicity(content)
+        toxicity_scores = await check_toxicity(clean_text) 
+        print(f"TOXIC: CLEAN TEXT: {clean_text}")
+        print(f"TOXIC: SCORE: {toxicity_scores}")
         # Action: Warn
-        if toxicity_scores.get('toxicity', 0) > TOXICITY_THRESHOLD:
-            score = toxicity_scores['toxicity']
+        insult_score = toxicity_scores.get('insult', 0)
+        threat_score = toxicity_scores.get('threat', 0)
+        sexual_score = toxicity_scores.get('sexual_explicit', 0)
+
+        if (insult_score > THRESHOLD_INSULT or 
+            threat_score > THRESHOLD_THREAT or 
+            sexual_score > THRESHOLD_SEXUAL):
 
             # Action: Delete message
             # DEBUG
+            # TODO: log the message with message link
+            # TODO: excel to keep track of users who offended?
             # await message.delete()
-
+            
             # Action: Send warning 
             warning_message = (
                 f"AYO NO NO NO {message.author.mention}! "
                 f"NO TOXICITY IN THE BACKYARD. " 
                 f"Calling pumpy. <@{OWNER_ID}> "
             )
-            await message.channel.send(warning_message)
+            await message.channel.send(content=warning_message)
+            await message.channel.send(stickers=[await message.guild.fetch_sticker(STICKER_AYONONONO)])
             return
  
 
