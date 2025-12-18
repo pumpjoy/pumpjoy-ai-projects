@@ -14,6 +14,7 @@ producer = KafkaProducer(
 
 # A list of crypto-specific terminology to inject into fake tweets
 crypto_keywords = ["Bitcoin", "BTC", "Bull run", "Bear market", "HODL", "To the moon", "Crash", "Scam", "Investment"]
+ts = int(time.time() * 1000)
 
 def generate_tweet():
     # Inject a crypto keyword into a fake sentence
@@ -23,7 +24,7 @@ def generate_tweet():
     return {
         'username': fake.user_name(),
         'text': sentence,
-        'timestamp': int(time.time() * 1000)
+        'timestamp': ts
     }
 
 if __name__ == "__main__":
@@ -32,4 +33,4 @@ if __name__ == "__main__":
         tweet = generate_tweet()
         producer.send('crypto_social', value=tweet)
         print(f"Sent Tweet: {tweet['text']}")
-        time.sleep(2) # Send a tweet every 2 seconds
+        time.sleep(0.5) # Send a tweet every 2 seconds

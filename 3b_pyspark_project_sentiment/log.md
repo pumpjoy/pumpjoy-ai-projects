@@ -1,3 +1,18 @@
+18 December 2025
+- Progress: 
+    1. Debugging the network issue with price_producer.py (Fixed)
+        1. Check connectivity
+            -  using `nc -vz` shows that either it is region restricted, firewall or dns blocked. 
+            - To check if wsl2 has connectivity, simply `ping google.com` or `nc -vz google.com 443`, which showed success. Failure in this is simply because internal firewall (`ufw`) or router is blocking all outgoing connections, at least for the wsl2. If success, the block is specific to Binance.
+        2. DNS check
+            - `nslookup stream.binance.com` - requires `sudo apt install bind9-dnsutils` 
+            - Returned an address that is local to me instead of Binance-owned server, powered by Clourflare `13.x.x.x`. My ISP DNS Hijacked or Transparent Proxy'd me. 
+        3. Solution: Change source. `Using coinbase.com` which is not blocked by my ISP.
+    2. Debugging issues with Spark job cannot read from Kafka price producer.
+        - Issues found: 
+            - Mismatch topics for producers and processors.
+            - Datetime mismatch. My local time zone is not GMT+0 which is the default settings.
+
 
 16 December 2025
 - Progress:
