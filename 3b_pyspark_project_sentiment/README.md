@@ -1,4 +1,6 @@
 
+---
+# Below these are quick access commands, and its explanations
 
 Commands:
 - Start Spark Job - 
@@ -31,29 +33,14 @@ CREATE TABLE realtime_hype (
 
 Debug Commands:
 - Docker logs - `docker-compose logs -f`
-- Docker Kafka send 5 messages by topics - 
+- Check if Kafka is receiving from producers (send to terminal by topic) - 
 ```
 docker exec -it <container_name> /usr/bin/kafka-console-consumer \
     --bootstrap-server localhost:9092 \
-    --topic crypto_price \
+    --topic crypto_price (or crypto_social) \
     --from-beginning \
     --max-messages 5
 ```
-```
-docker exec -it <container_name> /usr/bin/kafka-console-consumer \
-    --bootstrap-server localhost:9092 \
-    --topic crypto_social \
-    --from-beginning \
-    --max-messages 5
-```
-
-docker exec -it 3b_pyspark_project_sentiment-kafka-1  /usr/bin/kafka-console-consumer \
-    --bootstrap-server localhost:9092 \
-    --topic crypto_social \
-    --from-beginning \
-    --max-messages 5 
-
-
 
 - Network debugs - 
     - Install Netcat if not already - `sudo apt install netcat-openbsd`
@@ -62,4 +49,9 @@ docker exec -it 3b_pyspark_project_sentiment-kafka-1  /usr/bin/kafka-console-con
     - Test Internet Connectivity - `nc -vz google.com 443`
     - Test IP Block - `nslookup stream.binance.com`
     - Check Local Firewall - `sudo ufw status`
-    - 
+
+- Debug Spark-job receiving from Kafka commands:
+    - This was used to check if the timestamp are in sync to enable joining.
+        - To debug why postgre is not receiving anything.
+    - Receiving from social: `social_raw.writeStream.format("console").option("truncate", "false").start()`
+    - Receiving from price: `price_raw.writeStream.format("console").option("truncate", "false").start()`

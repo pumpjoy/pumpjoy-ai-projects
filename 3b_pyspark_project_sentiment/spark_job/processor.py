@@ -6,7 +6,7 @@ import pandas as pd
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import ( 
     col, pandas_udf,
-    window, avg 
+    window, avg, expr
 )
 from pyspark.sql.types import (
     StructType, StructField, 
@@ -86,32 +86,39 @@ def main():
     social_raw = read_kafka_topic(spark, "crypto_social", social_schema)
     price_raw = read_kafka_topic(spark, "crypto_price", price_schema)
     
-    # 4. Process and Watermarking
-    # Allow 1 minute for late data to arrive on either side
-    social_processed = social_raw \
-        .withColumn("sentiment_score", analyze_sentiment_score(col("text"))) \
-        .withWatermark("timestamp", "20 seconds")
+    # 4. Process and Join Streams
+    # 1. Prepare Social Stream (Round timestamp to 10s to create a 'join_key')
+    social_ready = social_raw \
+        .withColumn("sentiment_score", analyze_sentiment_score(F.col("text"))) \
+        .withColumn("join_key", (F.unix_timestamp("timestamp") - (F.unix_timestamp("timestamp") % 10))) \
+        .withWatermark("timestamp", "30 seconds")
 
-    price_processed = price_raw \
-        .withWatermark("timestamp", "20 seconds")
+    # 2. Prepare Price Stream (Round timestamp to 10s to create a 'join_key')
+    price_ready = price_raw \
+        .withColumn("join_key", (F.unix_timestamp("timestamp") - (F.unix_timestamp("timestamp") % 10))) \
+        .withWatermark("timestamp", "30 seconds")
 
-    # 5. Windowed Aggregation 
-    # Group by 1 minute blocks 
-    social_avg = social_processed.groupBy(window("timestamp", "10 seconds")) \
-        .agg(avg("sentiment_score").alias("hype_score"))
+    # 3. Join on the EXACT join_key AND the range
+    raw_joined = price_ready.alias("p").join(
+        social_ready.alias("s"),
+        expr("""
+            p.join_key = s.join_key AND 
+            p.timestamp >= s.timestamp - interval 10 seconds AND
+            p.timestamp <= s.timestamp + interval 10 seconds
+        """),
+        "inner"
+    )
 
-    price_avg = price_processed.groupBy(window("timestamp", "10 seconds")) \
-        .agg(avg("price").alias("avg_price"))
-
-    # 6. Join the df together
-    # Join the two 1-minute buckets together
-    final_df = price_avg.join(social_avg, "window", "left") \
-    .select(
-        col("window.start").alias("time"),
-        col("avg_price"),
-        # F.coalesce picks the first non-null value. 
-        # If hype_score is null, it returns 0.0.
-        F.coalesce(col("hype_score"), F.lit(0.0)).alias("hype_score")
+    # 4. Aggregate
+    final_df = raw_joined.groupBy(
+        window(F.col("p.timestamp"), "10 seconds")
+    ).agg(
+        F.avg("price").alias("avg_price"),
+        F.avg("sentiment_score").alias("hype_score")
+    ).select(
+        F.col("window.start").alias("time"),
+        "avg_price",
+        "hype_score"
     )
     
     # 7. Output to Postgres
@@ -134,21 +141,7 @@ def main():
         .outputMode("append") \
         .format("console") \
         .start()
-
-    
-    # debug_price = spark.readStream \
-    #     .format("kafka") \
-    #     .option("kafka.bootstrap.servers", "localhost:9092") \
-    #     .option("subscribe", "crypto_price") \
-    #     .option("startingOffsets", "earliest") \
-    #     .load() \
-    #     .selectExpr("CAST(value AS STRING) as raw_json")
-
-    # # Assign it to a variable so we can await it
-    # debug_query = debug_price.writeStream \
-    #     .format("console") \
-    #     .start()
-
+ 
     spark.streams.awaitAnyTermination()
 
 if __name__ == "__main__":

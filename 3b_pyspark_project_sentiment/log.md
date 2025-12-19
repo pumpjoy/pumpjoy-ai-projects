@@ -1,3 +1,23 @@
+19 December 2025
+- Progress: 
+    1. Further debug to find the issue with no-rows produced by spark
+        1. Check if Spark is receiving from Kafka via rawstring
+            - It received. 
+        2. Check the timestamp to be similar by the seconds. It is.
+        3. Check social_avg and _price avg.
+            - BUG: Failed. Watermark has issue.
+            - Solution: Check their immediate values before aggregation:
+                - `social_avg.writeStream.queryName("debug_social_agg").outputMode("update").format("console").start()` and the price equivalent.
+                - The above debug shows that the aggregations are working internally, and that it is a timing/watermark issue. A `final_df` issue.
+    2. **Fixing the massive issue of timing, which caused `join` to fail.**
+        1. Preparing `join_key` column for both social and price, which is done by rounding the time to the nearest 10.
+            - Solution: This gives Spark a direct address to join. `p.join_key = s.join_key
+            - Result: Spark now compares a Price from 13:10 to Social message from 13:10. This allows Has join which is faster than directly comparing based on range of 10s, which satisfies Spark's predicate requirement.  
+        2. Breaking watermark issue from aggregating Price and Social separately, then trying to join the result. 
+            - Issue: This creates a **Circular Dependency**, where Price Aggregate waits for Social Watermark, and vice versa.
+            - Solution: If we join the raw data first, then aggregate in `final_df`.
+        - With this logic change, Postgre properly receives from Spark.
+
 18 December 2025
 - Progress: 
     1. Debugging the network issue with price_producer.py (Fixed)

@@ -33,4 +33,4 @@ if __name__ == "__main__":
         tweet = generate_tweet()
         producer.send('crypto_social', value=tweet)
         print(f"Sent Tweet: {tweet['text']}")
-        time.sleep(0.5) # Send a tweet every 2 seconds
+        time.sleep(0.1) # Send a tweet every 2 seconds
