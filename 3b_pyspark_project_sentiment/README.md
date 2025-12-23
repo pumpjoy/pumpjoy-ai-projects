@@ -3,6 +3,7 @@
 # Below these are quick access commands, and its explanations
 
 Commands:
+- run python _producer.py
 - Start Spark Job - 
 ```
 spark-submit \
@@ -11,6 +12,9 @@ spark-submit \
 --conf "spark.executor.extraJavaOptions=-Dio.netty.tryReflectionSetAccessible=true --add-opens=java.base/java.nio=ALL-UNNAMED --add-opens=java.base/sun.nio.ch=ALL-UNNAMED" \
 spark_job/processor.py
 ```
+- streamlit run ./dashboard.py
+
+---
 
 - Connect to PostgreSQL Database - `docker exec -it 3b_pyspark_project_sentiment-postgres-1 psql -U user -d hype_db`
 - Create results table -

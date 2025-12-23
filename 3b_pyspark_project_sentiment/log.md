@@ -1,3 +1,10 @@
+23 December 2025
+- Progress:
+    1. Introduced streamlit dashboard to display the data from PostgreSQL. It refreshes every 5 seconds.
+    2. Dockerize the system -
+        - `init-db/schema.sql` - Create table if not exist when container starts.
+- Note that this version uses Spark running from local pc. Which Spark machine is from `pyspark`. Will reuse this in dockerized container.
+
 19 December 2025
 - Progress: 
     1. Further debug to find the issue with no-rows produced by spark

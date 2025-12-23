@@ -1,12 +1,10 @@
 # producers/processors.py
-# Uses Pandas UDF
-import time
-import sys
+# Uses Pandas UDF 
 import pandas as pd
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import ( 
-    col, pandas_udf,
-    window, avg, expr
+    pandas_udf,
+    window, expr
 )
 from pyspark.sql.types import (
     StructType, StructField, 
